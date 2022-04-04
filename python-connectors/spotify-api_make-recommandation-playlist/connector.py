@@ -1,124 +1,92 @@
 # This file is the actual code for the custom Python dataset spotify-api_make-recommandation-playlist
 
 # import the base class for the custom dataset
-from six.moves import xrange
 from dataiku.connector import Connector
-
-"""
-A custom Python dataset is a subclass of Connector.
-
-The parameters it expects and some flags to control its handling by DSS are
-specified in the connector.json file.
-
-Note: the name of the class itself is not relevant.
-"""
+from spotifyapi.spotify_utils import init_spotify_auth
+import itertools
 class MyConnector(Connector):
+    ALL_FEATURES = [
+        "acousticness",
+        "danceability",
+        "duration_ms",
+        "energy",
+        "instrumentalness",
+        "key",
+        "liveness",
+        "loudness",
+        "mode",
+        "speechiness",
+        "tempo",
+        "time_signature",
+        "valence",
+        "popularity"
+    ]
+    FEATURE_MODIFIERS = [
+        "max",
+        "min",
+        "target"
+    ]
 
     def __init__(self, config, plugin_config):
-        """
-        The configuration parameters set up by the user in the settings tab of the
-        dataset are passed as a json object 'config' to the constructor.
-        The static configuration parameters set up by the developer in the optional
-        file settings.json at the root of the plugin directory are passed as a json
-        object 'plugin_config' to the constructor
-        """
         Connector.__init__(self, config, plugin_config)  # pass the parameters to the base class
-
-        # perform some more initialization
-        self.theparam1 = self.config.get("parameter1", "defaultValue")
+        self.auth_mode = self.config.get("auth_mode")
+        self.spotify_auth = self.config.get("spotify_client_crendentials") if self.auth_mode == "client_credentials" else self.config.get("spotify_sso")
+        
+        self.spotify_client = init_spotify_auth(self.auth_mode, self.spotify_auth)
+        self.validate_params()
 
     def get_read_schema(self):
-        """
-        Returns the schema that this connector generates when returning rows.
+            return None
 
-        The returned schema may be None if the schema is not known in advance.
-        In that case, the dataset schema will be infered from the first rows.
+    def validate_params(self):
+        seed_artists_ids = self.config.get("seed_artists_ids", [])
+        seed_tracks_ids = self.config.get("seed_tracks_ids", [])
+        seed_genres = self.config.get("seed_genres", [])
 
-        If you do provide a schema here, all columns defined in the schema
-        will always be present in the output (with None value),
-        even if you don't provide a value in generate_rows
+        if len(seed_artists_ids + seed_tracks_ids + seed_genres) == 0:
+            raise ValueError("At least one of seed_artists_ids, seed_tracks_ids or seed_genres must be provided")
 
-        The schema must be a dict, with a single key: "columns", containing an array of
-        {'name':name, 'type' : type}.
+        nb_of_tracks = self.config.get("nb_of_tracks")
+        if nb_of_tracks is None or not 0 < nb_of_tracks <= 100:
+            raise ValueError("nb_of_tracks must be a positive integer between 1 and 100")
 
-        Example:
-            return {"columns" : [ {"name": "col1", "type" : "string"}, {"name" :"col2", "type" : "float"}]}
+        extra_features = self.config.get("extra_features")
+        allowed_values_for_features = ["_".join(f) for f in list(itertools.product(self.FEATURE_MODIFIERS, self.ALL_FEATURES))]
 
-        Supported types are: string, int, bigint, float, double, date, boolean
-        """
+        if extra_features is not None:
+            for feature_name, feature_value in extra_features.items():
+                if feature_name not in allowed_values_for_features:
+                    raise ValueError("Invalid feature: {}".format(feature_name))
+                try:
+                    _ = float(feature_value)
+                except ValueError:
+                    raise ValueError("Value for feature {} should be a float (Currently {})".format(feature_name, feature_value))
 
-        # In this example, we don't specify a schema here, so DSS will infer the schema
-        # from the columns actually returned by the generate_rows method
-        return None
+
+    def generate_playlist_on_recommandation(self):
+        extra_features = self.config.get("extra_features", {})
+        generated_playlist = self.spotify_client.recommendations(
+            seed_artists=self.config.get("seed_artists_ids"),
+            seed_tracks=self.config.get("seed_tracks_ids"),
+            seed_genres=self.config.get("seed_genres"),
+            limit=self.config.get("nb_of_tracks"),
+            **extra_features
+        )
+        return generated_playlist
+
+    def add_features_to_tracks(self, tracks):
+        tracks_with_features = []
+        tracks_ids = [track.get("id") for track in tracks]
+        tracks_features = self.spotify_client.audio_features(tracks_ids)
+        for track_i, track in enumerate(tracks):
+            tracks_with_features.append(dict(track, **tracks_features[track_i]))
+        return tracks_with_features
 
     def generate_rows(self, dataset_schema=None, dataset_partitioning=None,
                             partition_id=None, records_limit = -1):
-        """
-        The main reading method.
-
-        Returns a generator over the rows of the dataset (or partition)
-        Each yielded row must be a dictionary, indexed by column name.
-
-        The dataset schema and partitioning are given for information purpose.
-        """
-        for i in xrange(1,10):
-            yield { "first_col" : str(i), "my_string" : "Yes" }
-
-
-    def get_writer(self, dataset_schema=None, dataset_partitioning=None,
-                         partition_id=None):
-        """
-        Returns a writer object to write in the dataset (or in a partition).
-
-        The dataset_schema given here will match the the rows given to the writer below.
-
-        Note: the writer is responsible for clearing the partition, if relevant.
-        """
-        raise Exception("Unimplemented")
-
-
-    def get_partitioning(self):
-        """
-        Return the partitioning schema that the connector defines.
-        """
-        raise Exception("Unimplemented")
-
-
-    def list_partitions(self, partitioning):
-        """Return the list of partitions for the partitioning scheme
-        passed as parameter"""
-        return []
-
-
-    def partition_exists(self, partitioning, partition_id):
-        """Return whether the partition passed as parameter exists
-
-        Implementation is only required if the corresponding flag is set to True
-        in the connector definition
-        """
-        raise Exception("unimplemented")
-
-
-    def get_records_count(self, partitioning=None, partition_id=None):
-        """
-        Returns the count of records for the dataset (or a partition).
-
-        Implementation is only required if the corresponding flag is set to True
-        in the connector definition
-        """
-        raise Exception("unimplemented")
-
-
-class CustomDatasetWriter(object):
-    def __init__(self):
-        pass
-
-    def write_row(self, row):
-        """
-        Row is a tuple with N + 1 elements matching the schema passed to get_writer.
-        The last element is a dict of columns not found in the schema
-        """
-        raise Exception("unimplemented")
-
-    def close(self):
-        pass
+        generated_playlist = self.generate_playlist_on_recommandation()
+        tracks_in_playlist = generated_playlist.get("tracks", [])
+        if self.config.get("add_features_to_tracks"):
+            tracks_in_playlist = self.add_features_to_tracks(tracks_in_playlist)
+        for track in tracks_in_playlist:
+            yield track

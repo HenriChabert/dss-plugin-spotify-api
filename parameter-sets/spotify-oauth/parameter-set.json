@@ -1,15 +1,15 @@
 {
     "meta" : {
-        "label": "Spotify login with SSO",
-        "description": "",
+        "label": "Spotify SSO",
+        "description": "Connect to API API with OAuth2 protocol. See here for more information https://developer.spotify.com/documentation/general/guides/authorization/code-flow/",
         "icon": "icon-music"
     },
-    "defaultDefinableInline": true,
+    "defaultDefinableInline": false,
     "defaultDefinableAtProjectLevel": true,
     "pluginParams": [],
     "params": [
         {
-            "name": "spotify-auth",
+            "name": "spotify_oauth_token",
             "type": "CREDENTIAL_REQUEST",
             "label": "Spotify Authorization Code Flow",
             "credentialRequestSettings": {

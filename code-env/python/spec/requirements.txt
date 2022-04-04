@@ -1,2 +1,1 @@
-unidecode
-spotipy
+spotipy==2.16.0

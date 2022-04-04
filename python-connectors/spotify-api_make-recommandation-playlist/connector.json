@@ -1,7 +1,7 @@
 {
     "meta": {
-        "label": "Make a Playlist",
-        "description": "Make a playlist of recommended songs based on an input artist (using the Spotify API)",
+        "label": "Generate a Playlist",
+        "description": "Generate a playlist of tracks based on many features",
         "icon": "icon-music"
     },
     "readable": true,
@@ -11,6 +11,44 @@
 
    ],
     "params": [
+        {
+            "label": "Authentication to Spotify API",
+            "type": "SEPARATOR"
+        },
+        {
+            "name": "auth_mode",
+            "label": "Authorization Mode",
+            "type": "SELECT",
+            "selectChoices": [
+                {
+                    "value": "sso_auth",
+                    "label": "Authorization code (SSO)"
+                },
+                {
+                    "value": "client_credentials",
+                    "label": "Client credentials"
+                }
+            ],
+            "defaultValue": "sso_auth",
+            "description": "For more details, go to https://developer.spotify.com/documentation/general/guides/authorization/",
+            "mandatory": true
+        },
+        {
+            "name": "spotify_sso",
+            "label": "Spotify SSO authentication",
+            "type": "PRESET",
+            "visibilityCondition": "model.auth_mode == 'sso_auth'",
+            "parameterSetId": "spotify-oauth",
+            "mandatory": true
+        },
+        {
+            "name": "spotify_client_crendentials",
+            "label": "Spotify Client Credentials authentication",
+            "type": "PRESET",
+            "visibilityCondition": "model.auth_mode == 'client_credentials'",
+            "parameterSetId": "spotify-credentials",
+            "mandatory": true
+        },
         {
             "label": "Define yout music playlist search",
             "type": "SEPARATOR"
@@ -546,8 +584,8 @@
             "description": "See here for available features https://developer.spotify.com/documentation/web-api/reference/#/operations/get-recommendations"
         },
         {
-            "name": "songs_nb",
-            "label": "Number of Songs",
+            "name": "nb_of_tracks",
+            "label": "Number of tracks",
             "type": "INT",
             "minI": 1,
             "maxI": 100,
@@ -556,15 +594,10 @@
             "mandatory": true 
         },
         {
-            "label": "Select your authentification type",
-            "type": "SEPARATOR"
-        },
-        {
-            "name": "spotify_preset",
-            "label": "Spotify preset",
-            "type": "PRESET",
-            "parameterSetId": "spotify-credentials",
-            "mandatory": true
+            "name": "add_features_to_tracks",
+            "label": "Add features to output dataset",
+            "type": "BOOLEAN",
+            "defaultValue": false
         }
     ]
 

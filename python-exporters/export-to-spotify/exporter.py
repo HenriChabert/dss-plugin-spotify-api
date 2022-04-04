@@ -1,69 +1,60 @@
 # This file is the actual code for the custom Python exporter export-to-spotify
 
 from dataiku.exporter import Exporter
-from dataiku.exporter import SchemaHelper
 import os
+from spotipy import Spotify
+from spotifyapi.spotify_utils import init_spotify_auth
 
-class CustomExporter(Exporter):
-    """
-    The methods will be called like this:
-       __init__
-       open
-       write_row
-       write_row
-       write_row
-       ...
-       write_row
-       close
-    """
+def batch(iterable, n=1):
+    l = len(iterable)
+    for ndx in range(0, l, n):
+        yield iterable[ndx:min(ndx + n, l)]
 
+class SpotifyExporter(Exporter):
     def __init__(self, config, plugin_config):
-        """
-        :param config: the dict of the configuration of the object
-        :param plugin_config: contains the plugin settings
-        """
         self.config = config
         self.plugin_config = plugin_config
-        self.f = None
-        self.row_index = 0
+        self.spotify_auth = self.config.get("spotify_auth")
+        self.spotify_client: Spotify = init_spotify_auth("sso_auth", self.spotify_auth)
+        self.tracks_to_export_to_spotify = []
 
-    def open(self, schema):
-        """
-        Start exporting. Only called for exporters with behavior MANAGES_OUTPUT
-        :param schema: the column names and types of the data that will be streamed
-                       in the write_row() calls
-        """
-        raise Exception("unimplemented")
+    def validate_params(self, column_names):
+        tracks_ids_column = self.config.get("track_id_column")
+        if not tracks_ids_column in column_names:
+            raise ValueError(f"The provided column name {tracks_ids_column} is not in the schema. Schema: {column_names}")
 
-    def open_to_file(self, schema, destination_file_path):
-        """
-        Start exporting. Only called for exporters with behavior OUTPUT_TO_FILE
-        :param schema: the column names and types of the data that will be streamed
-                       in the write_row() calls
-        :param destination_file_path: the path where the exported data should be put
-        """
-        self.f = open(destination_file_path, 'w')
-        self.f.write('_index_')
-        for column in schema['columns']:
-            self.f.write('\t')
-            self.f.write(column['name'].encode())
-        self.f.write('\n')
+    def open(self, schema: list):
+        column_names = [c["name"] for c in schema["columns"]]
+        self.validate_params(column_names)
+        self.tracks_ids_column_index = column_names.index(self.config.get("track_id_column"))
+        self.current_user = self.spotify_client.current_user()
+
+        playlist_name = self.config.get("playlist_name")
+
+        try:
+            new_playlist = self.spotify_client.user_playlist_create(
+                user=self.current_user.get("id"),
+                name=playlist_name,
+                public=self.config.get("is_public"),
+                collaborative=self.config.get("is_collaborative"),
+            )
+        except Exception as err:
+            raise Exception(f"There have been a problem creating the playlist {playlist_name}. Make sure you use SSO Auth method and retry. Original Error: {err}")
+
+        self.playlist_id = new_playlist.get("id")
+
 
     def write_row(self, row):
-        """
-        Handle one row of data to export
-        :param row: a tuple with N strings matching the schema passed to open.
-        """
-        self.f.write(str(self.row_index))
-        for v in row:
-            self.f.write('\t')
-            self.f.write(('%s' % v).encode() if v is not None else '')
-        self.f.write('\n')
-        self.row_index += 1
-        
+        self.tracks_to_export_to_spotify.append(row[self.tracks_ids_column_index])
+
+    def perform_push_to_spotify(self):
+        for tracks_chunck in batch(self.tracks_to_export_to_spotify, 100):
+            self.spotify_client.user_playlist_add_tracks(
+                user=self.current_user,
+                playlist_id=self.playlist_id,
+                tracks=tracks_chunck
+            )
+
     def close(self):
-        """
-        Perform any necessary cleanup
-        """
-        self.f.close()
+        self.perform_push_to_spotify()
 
